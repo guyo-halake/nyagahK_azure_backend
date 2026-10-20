@@ -1,87 +1,121 @@
-# ⚖️ Nyaga Law — Legal Remuneration Engine & Azure Cloud API
+# ⚖️ Nyaga Law — Enterprise Legal Microservice & Azure Cloud Infrastructure
 > Production-grade Python 3.11 FastAPI backend microservice for Kenyan Advocates Remuneration Order calculations, taxation engines, 2FA OTP security, and legal file metadata processing.
+> Designed for enterprise reliability, high availability, and zero-downtime operations on **Microsoft Azure**.
 
 [![CI Quality Gate](https://github.com/guyo-halake/nyagahK_azure_backend/actions/workflows/ci.yml/badge.svg)](https://github.com/guyo-halake/nyagahK_azure_backend/actions/workflows/ci.yml)
 [![CD Azure Deployment](https://github.com/guyo-halake/nyagahK_azure_backend/actions/workflows/cd-azure.yml/badge.svg)](https://github.com/guyo-halake/nyagahK_azure_backend/actions/workflows/cd-azure.yml)
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
+![Python](https://img.shields.io/badge/Python-3.11.8--slim-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?logo=fastapi)
-![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED?logo=docker)
+![Docker](https://img.shields.io/badge/Docker-CIS_Benchmark_4.1-2496ED?logo=docker)
+![Terraform](https://img.shields.io/badge/IaC-Terraform_azurerm-7B42BC?logo=terraform)
 ![Azure](https://img.shields.io/badge/Cloud-Microsoft_Azure-0078D4?logo=microsoftazure)
-![Pytest](https://img.shields.io/badge/Tests-18_Passed-success?logo=pytest)
+![DevSecOps](https://img.shields.io/badge/DevSecOps-Aqua_Trivy_Audited-green?logo=trivy)
+![Pytest](https://img.shields.io/badge/Tests-19_Passed-success?logo=pytest)
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ Enterprise Cloud Architecture (Microsoft Azure)
 
 ```mermaid
 graph TD
-    Client[React Client / Webhook Caller] -->|HTTPS REST API| AzureLB[Azure App Service / Load Balancer]
-    AzureLB -->|Port 8000| DockerApp[Hardened Python 3.11 Container]
+    User([Advocate / Web Client]) -->|HTTPS Port 443| NSG[Azure Network Security Group]
+    NSG --> VNet[Azure Virtual Network - 10.10.0.0/16]
     
-    subgraph Docker Container
-        API[FastAPI Router - /api/v1] --> Core[Core Security & Rate Limiting]
-        API --> Engine[Statutory Remuneration Engine]
-        API --> Health[Health Probe: /api/v1/health]
-        Engine --> Rules[LN 64/1962 2014 Amendment Rules]
+    subgraph VNet Subnets
+        SubnetApp[Delegated App Service Subnet - 10.10.1.0/24]
+        ProdSlot[Production Web App: nyagahkithinji-advocates]
+        StagingSlot[Staging Slot: nyagahkithinji-advocates/staging]
     end
 
-    DockerApp -->|Auth & Persistence| Supabase[(Supabase PostgreSQL + Storage)]
-    DockerApp -->|Notifications| SMTP[Gmail TLS SMTP Gateway]
+    SubnetApp --> ProdSlot
+    SubnetApp --> StagingSlot
 
-    subgraph CI/CD & Cloud Delivery
-        GitPush[Git Push / PR] --> GHA[GitHub Actions CI Quality Gate]
-        GHA --> Pytest[18 Automated Pytests]
-        GHA --> Buildx[Docker Buildx Non-Root Test]
-        Buildx --> ACR[Azure Container Registry]
-        ACR --> StagingApp[Azure Staging Slot]
-        StagingApp -->|Manual Review| ProdApp[Azure Production]
+    subgraph Security & Access Control
+        MI[System-Assigned Managed Identity] -->|RBAC: AcrPull - Passwordless| ACR[Azure Container Registry: acrnyagahfee]
+        ACR -->|Container Image| ProdSlot
+        ACR -->|Container Image| StagingSlot
+    end
+
+    subgraph Observability & Reliability
+        ProdSlot -->|Structured JSON Logs| LAW[Azure Log Analytics Workspace]
+        ProdSlot -->|APM Telemetry| AppInsights[Azure Application Insights]
+        Alerts[Azure Metric Alerts: Http5xx > 5 & CPU > 85%] --> LAW
+    end
+
+    subgraph CI/CD & DevSecOps Release Lifecycle
+        GitPush[Git Push to develop / staging / main] --> CI[CI Quality Gate]
+        CI --> Pytest[19 Pytests: Legal Math & Subsystems]
+        CI --> Smoke[Docker Buildx Non-Root Smoke Test]
+        CI --> Trivy[Aqua Security Trivy Vulnerability Scan]
+        Trivy --> DeployStaging[CD: Automated Deploy to Staging Slot]
+        DeployStaging --> ZeroDowntimeSwap{Manual Approval Gate}
+        ZeroDowntimeSwap -->|az webapp deployment slot swap| LiveProd[Zero-Downtime Production Traffic Swap]
     end
 ```
 
 ---
 
-## 🚀 Key Engineering Features
+## 🚀 Cloud & DevOps Engineering Highlights
 
-1. **Kenyan Advocates Remuneration Engine (`app/engine/remuneration_engine.py`)**:
-   - Automated legal bill calculation under **Kenya Law LN 64/1962 (2014 Amendment Order)**.
-   - **Schedule 6 (High Court, Court of Appeal, ELC, ELRC)** ad valorem scale calculations.
-   - **Schedule 7 (Subordinate / Magistrate's Courts)** scale calculations.
-   - **Getting-Up Fees** (33.33% / 1/3 of instruction fee floor).
-   - Itemized folio work (Drawings @ Kshs 500/folio, Copying @ Kshs 50/folio, Court Attendances @ Kshs 2,500/hr, Demand Letters @ Kshs 500) + 16% VAT computation.
-   - Validated against precedent taxation records (*Seyani Brothers v Greenhills* [KES 30.8M], *Dhanya Construction v Sunil Shah*).
+### 1. Declarative Infrastructure as Code (Terraform `azurerm`)
+Located in [`azure/terraform/`](file:///azure/terraform):
+* **Modular Infrastructure**:
+  * [`network.tf`](file:///azure/terraform/network.tf): Provisions VNet (`10.10.0.0/16`), delegated subnet for Regional VNet Integration, and Network Security Group enforcing HTTPS (Port 443) and denying cleartext HTTP.
+  * [`acr.tf`](file:///azure/terraform/acr.tf): Azure Container Registry with **Admin credentials disabled** in favor of passwordless RBAC.
+  * [`app_service.tf`](file:///azure/terraform/app_service.tf): Linux App Service Plan, Production Web App, and **Staging Slot** for blue/green zero-downtime releases.
+  * [`monitoring.tf`](file:///azure/terraform/monitoring.tf): Log Analytics Workspace (30-day retention), Application Insights APM, Diagnostic settings streaming console/HTTP logs, and SRE metric alerts for HTTP 5xx errors and CPU spikes.
+  * [`outputs.tf`](file:///azure/terraform/outputs.tf) & [`variables.tf`](file:///azure/terraform/variables.tf): Clean parameterized deployment spec.
 
-2. **Enterprise Containerization (`Dockerfile`)**:
-   - Multi-stage build separating compiler toolchains from runtime.
-   - Runs as non-root user (`USER appuser`, UID `10001`).
-   - Built-in container health check probe.
+### 2. Deterministic & Reproducible Docker Builds
+* **Pinned Base Image**: `python:3.11.8-slim-bookworm` (eliminates unexpected upstream Debian package breaks).
+* **CIS Docker Benchmark Compliance**: Runs under dedicated unprivileged system account (`USER appuser`, UID `10001`, GID `10001`).
+* **Zero Compiler Tools in Production**: Multi-stage build discards GCC, Make, and build headers after compilation.
+* **Health Probes**: Integrated `HEALTHCHECK` running every 30 seconds against `/api/v1/health`.
 
-3. **Multi-Environment Cloud Pipeline**:
-   - **Develop**: Automated PR validation with 18 Pytests and Docker Buildx smoke test.
-   - **Staging**: Automated deployment to Azure Staging App Service with post-deploy verification.
-   - **Production**: Protected environment deployment with zero downtime.
+### 3. Observability & Distributed Tracing
+* **Structured JSON Logging** (`app/core/structured_logging.py`):
+  Every incoming request emits machine-readable JSON directly to stdout for ingestion into Log Analytics:
+  ```json
+  {"timestamp": "2026-10-20 11:16:08", "level": "INFO", "service": "nyaga-law-backend", "correlation_id": "fece4df0-021b-...", "status_code": 200, "latency_ms": 3.1}
+  ```
+* **Correlation IDs**: `CorrelationIdMiddleware` assigns or propagates an `X-Correlation-ID` header across every request and log line.
+* **Liveness vs Readiness Separation**:
+  * `GET /api/v1/health`: Lightweight liveness probe for Docker and Azure pingers.
+  * `GET /api/v1/health/ready`: Subsystem verification (Statutory Engine, Supabase, SMTP gateway) checked prior to slot traffic swaps.
+
+### 4. SRE Incident Response Runbook
+Located in [`azure/INCIDENT_RESPONSE_RUNBOOK.md`](file:///azure/INCIDENT_RESPONSE_RUNBOOK.md):
+* Severity classification matrix (SEV-1 through SEV-3).
+* 5-minute initial triage runbook.
+* **Emergency Zero-Downtime Rollback**:
+  ```bash
+  az webapp deployment slot swap --resource-group rg-nyagahfee-prod --name nyagahkithinji-advocates --slot staging --target-slot production
+  ```
+* Kusto Query Language (KQL) queries for Log Analytics (tracing correlation IDs, error spikes, P95/P99 latency).
+* Post-Incident Review (PIR) template with Root Cause Analysis (5 Whys).
 
 ---
 
-## ⚡ Quick Start (Docker)
+## ⚡ Quick Start (Local Docker)
 
 ```bash
-# Clone the backend repository
+# Clone the repository
 git clone https://github.com/guyo-halake/nyagahK_azure_backend.git
 cd nyagahK_azure_backend
 
-# Launch the containerized backend
+# Run local container stack
 docker compose up --build -d
 ```
-
-* **Interactive Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-* **ReDoc Documentation**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-* **Liveness & Readiness Probe**: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+* **Interactive API Documentation (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+* **ReDoc API Reference**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+* **Liveness Probe**: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+* **Readiness Probe**: [http://localhost:8000/api/v1/health/ready](http://localhost:8000/api/v1/health/ready)
 
 ---
 
-## 🧪 Running Automated Tests
+## 🧪 Automated Testing
 
+Execute the 19 automated Pytests verifying statutory law math, security algorithms, and health endpoints:
 ```bash
-# Run all 18 Pytests locally
 python -m pytest app/tests -v
 ```
