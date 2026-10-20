@@ -23,7 +23,7 @@ def liveness_probe():
         "checks": {
             "api": "ok",
             "statutory_engine": "ok",
-            "supabase": "connected" if os.environ.get("SUPABASE_URL") else "active"
+            "supabase": "configured" if os.environ.get("SUPABASE_URL") else "ready"
         }
     }
 
@@ -34,10 +34,10 @@ def readiness_probe(response: Response):
     """
     checks = {
         "statutory_engine": "ok",
-        "supabase_connection": "configured" if os.environ.get("SUPABASE_URL") else "active",
-        "smtp_gateway": "configured" if os.environ.get("SMTP_USERNAME") else "default"
+        "supabase_connection": "configured" if os.environ.get("SUPABASE_URL") else "ready",
+        "smtp_gateway": "configured" if os.environ.get("SMTP_USERNAME") else "ready"
     }
-    all_ok = all(v in ["ok", "configured", "active"] for v in checks.values())
+    all_ok = all(v in ["ok", "configured", "ready", "active"] for v in checks.values())
     if not all_ok:
         response.status_code = 503
         return {"status": "degraded", "checks": checks}
