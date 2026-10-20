@@ -16,6 +16,17 @@ async def test_health_check_endpoint():
         assert data["checks"]["statutory_engine"] == "ok"
 
 @pytest.mark.asyncio
+async def test_readiness_probe_endpoint():
+    """Verify readiness probe verifies subsystems for Azure blue/green slot swap."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/v1/health/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ready"
+        assert "checks" in data
+
+@pytest.mark.asyncio
 async def test_statutory_schedules_endpoint():
     """Verify available statutory remuneration schedules are exposed for advocates."""
     transport = ASGITransport(app=app)

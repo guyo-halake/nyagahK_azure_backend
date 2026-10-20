@@ -1,3 +1,4 @@
+from app.core.structured_logging import CorrelationIdMiddleware, structured_logger
 import os
 from dotenv import load_dotenv
 
@@ -24,6 +25,9 @@ app = FastAPI(
     description="Python FastAPI backend for Kenyan Advocates Remuneration Order calculations, taxation engines, 2FA OTP security, and legal file metadata processing.",
     version="1.1.0"
 )
+# Structured JSON logging and distributed correlation tracing
+app.add_middleware(CorrelationIdMiddleware)
+
 
 # Connect slowapi rate limiter to FastAPI state
 app.state.limiter = limiter
