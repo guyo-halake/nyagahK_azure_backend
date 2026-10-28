@@ -5,6 +5,80 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/feenotes", tags=["Fee Notes & Bills of Costs"])
+import httpx
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hhkbypvdwikxdlwivmrn.supabase.co")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+def fetch_supabase_feenotes() -> List[dict]:
+    """Queries authoritative Supabase PostgreSQL fee_notes table."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return []
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/fee_notes?select=*&order=created_at.desc"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json"
+        }
+        with httpx.Client(timeout=4.0) as client:
+            res = client.get(url, headers=headers)
+            if res.status_code == 200:
+                rows = res.json()
+                mapped = []
+                for r in rows:
+                    mapped.append({
+                        "id": str(r.get("id")),
+                        "billNumber": r.get("bill_number"),
+                        "matterId": str(r.get("matter_id") or ""),
+                        "matterTitle": r.get("matter_title") or "Fee Note / Bill of Costs",
+                        "clientName": r.get("client_name") or "Corporate Client",
+                        "courtSchedule": r.get("court_schedule") or "",
+                        "claimValue": float(r.get("claim_value") or 0.0),
+                        "instructionFee": float(r.get("instruction_fee") or 0.0),
+                        "gettingUpFee": float(r.get("getting_up_fee") or 0.0),
+                        "grandTotal": float(r.get("grand_total") or 0.0),
+                        "status": r.get("status") or "processed",
+                        "generatedByUser": r.get("generated_by_user") or "Advocate",
+                        "createdAt": r.get("created_at") or "",
+                        "pdfUrl": r.get("pdf_url") or "",
+                        "excelUrl": r.get("excel_url") or "",
+                        "firmId": str(r.get("firm_id") or "firm-001")
+                    })
+                return mapped
+    except Exception as exc:
+        print(f"WARN: Supabase feenotes sync error: {exc}")
+    return []
+
+def upsert_supabase_feenote(note: dict):
+    """Upserts fee note directly to Supabase PostgreSQL table."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/fee_notes"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+        }
+        payload = {
+            "bill_number": note.get("billNumber"),
+            "court_schedule": note.get("courtSchedule") or None,
+            "claim_value": float(note.get("claimValue") or 0.0),
+            "instruction_fee": float(note.get("instructionFee") or 0.0),
+            "gettingUpFee": float(note.get("gettingUpFee") or 0.0),
+            "grand_total": float(note.get("grandTotal") or 0.0),
+            "status": note.get("status") or "processed",
+            "generated_by_user": note.get("generatedByUser") or "Advocate",
+            "pdf_url": note.get("pdfUrl") or None,
+            "excel_url": note.get("excelUrl") or None,
+        }
+        with httpx.Client(timeout=4.0) as client:
+            client.post(url, headers=headers, json=payload)
+    except Exception as exc:
+        print(f"WARN: Supabase upsert error: {exc}")
+
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 FEENOTES_FILE = os.path.join(DATA_DIR, "feenotes.json")
@@ -126,6 +200,12 @@ INITIAL_FEE_NOTES = [
 ]
 
 def load_feenotes() -> List[dict]:
+    # 1. Primary: Load from Supabase PostgreSQL
+    cloud_notes = fetch_supabase_feenotes()
+    if cloud_notes:
+        return cloud_notes
+
+    # 2. Local fallback if offline
     os.makedirs(DATA_DIR, exist_ok=True)
     if not os.path.exists(FEENOTES_FILE):
         with open(FEENOTES_FILE, "w", encoding="utf-8") as f:
@@ -219,6 +299,7 @@ def create_or_update_fee_note(payload: FeeNoteSchema):
         notes.insert(0, note_dict)
         
     save_feenotes(notes)
+    upsert_supabase_feenote(note_dict)
     return {"success": True, "note": note_dict}
 
 @router.get("/{note_id}")
