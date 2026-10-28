@@ -309,6 +309,7 @@ async def record_manual_payment(payload: ManualPaymentRecordRequest):
 
     payments.insert(0, record)
     save_payments(payments)
+    sync_payment_to_supabase(record)
 
     return {"success": True, "payment": record}
 
