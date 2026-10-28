@@ -211,10 +211,40 @@ async def get_firm_settings():
 
 @router.post("/firm-settings")
 async def save_firm_settings(payload: dict):
-    """Persists firm branding and banking settings to backend storage."""
+    """Persists firm branding and banking settings to backend storage and Supabase."""
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(FIRM_SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+
+    # Sync to Supabase firms table
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    if url and key:
+        try:
+            firm_id = payload.get("firmId") or payload.get("id") or "a0000000-0000-0000-0000-000000000001"
+            sb_payload = {
+                "id": firm_id,
+                "name": payload.get("topbarTitle") or payload.get("name") or "Law Firm",
+                "firm_reg_no": payload.get("lskRegNo") or payload.get("firmRegNo") or "P.105/1992",
+                "address": payload.get("address") or "",
+                "po_box": payload.get("poBox") or "",
+                "phone": payload.get("phone") or "",
+                "email": payload.get("email") or "",
+                "kra_pin": payload.get("kraPin") or "",
+                "bank_details": payload.get("bankDetails") or "",
+                "logo_url": payload.get("logoUrl") or "/logo.png"
+            }
+            headers = {
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates"
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(f"{url}/rest/v1/firms", headers=headers, json=sb_payload)
+        except Exception as e:
+            print(f"[SUPABASE FIRM SYNC ERROR]: {e}")
+
     return {"success": True, "settings": payload}
 
 class LoginRequest(BaseModel):
@@ -256,6 +286,7 @@ async def fetch_users_from_supabase() -> list[dict]:
                     )
                     full_name = row.get("full_name") or "Advocate"
                     email = row.get("email") or ""
+                    perms = row.get("permissions") if isinstance(row.get("permissions"), dict) else {}
                     mapped.append({
                         "id": str(row.get("id")),
                         "fullName": full_name,
@@ -263,17 +294,17 @@ async def fetch_users_from_supabase() -> list[dict]:
                         "advocateTitle": full_name.replace("Adv. ", "").strip(),
                         "lskNo": row.get("lsk_no") or "",
                         "role": mapped_role,
-                        "position": row.get("position") or (
+                        "position": perms.get("position") or row.get("position") or (
                             "Senior Partner & Remuneration Lead" if role_raw == "senior_partner"
                             else "Senior Managing Partner & System Administrator" if role_raw == "admin"
                             else "Lead Developer & System Administrator" if role_raw == "developer"
                             else "Advocate & Counsel"
                         ),
-                        "department": row.get("department") or "",
+                        "department": perms.get("department") or row.get("department") or "",
                         "workEmail": email,
                         "personalEmail": email,
-                        "phonePrimary": row.get("phone_primary") or "",
-                        "phoneSecondary": row.get("phone_secondary") or "",
+                        "phonePrimary": perms.get("phone_primary") or perms.get("phonePrimary") or row.get("phone_primary") or "",
+                        "phoneSecondary": perms.get("phone_secondary") or perms.get("phoneSecondary") or row.get("phone_secondary") or "",
                         "avatarUrl": row.get("avatar_url"),
                         "hasAllPermissions": mapped_role in ["Admin", "Developer"],
                         "passwordHash": hash_password("Nyagah@2026"),
@@ -291,16 +322,26 @@ async def upsert_user_in_supabase(user_data: dict):
         return
     try:
         role_map = "admin" if user_data.get("role") == "Admin" else "developer" if user_data.get("role") == "Developer" else "advocate"
+        permissions = {
+            "can_manage_matters": True,
+            "can_access_taxation": True,
+            "can_approve_fee_notes": True,
+            "position": user_data.get("position") or "",
+            "department": user_data.get("department") or "",
+            "phone_primary": user_data.get("phonePrimary") or "",
+            "phone_secondary": user_data.get("phoneSecondary") or "",
+        }
         payload = {
             "full_name": user_data.get("fullName"),
             "email": (user_data.get("workEmail") or "").lower(),
             "lsk_no": user_data.get("lskNo") or "",
             "role": role_map,
-            "position": user_data.get("position"),
-            "phone_primary": user_data.get("phonePrimary") or "",
-            "phone_secondary": user_data.get("phoneSecondary") or "",
             "is_active": True,
+            "permissions": permissions,
         }
+        if user_data.get("avatarUrl"):
+            payload["avatar_url"] = user_data.get("avatarUrl")
+        
         uid = str(user_data.get("id") or "")
         if len(uid) == 36 and "-" in uid:
             payload["id"] = uid
@@ -312,6 +353,16 @@ async def upsert_user_in_supabase(user_data: dict):
             "Prefer": "resolution=merge-duplicates"
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # First try patching by email if user exists
+            email_q = (user_data.get("workEmail") or "").lower()
+            if email_q:
+                patch_res = await client.patch(
+                    f"{url}/rest/v1/users?email=ilike.{email_q}",
+                    headers=headers,
+                    json=payload
+                )
+                if patch_res.status_code in [200, 204]:
+                    return
             await client.post(f"{url}/rest/v1/users", headers=headers, json=payload)
     except Exception as e:
         print(f"[SUPABASE USER UPSERT ERROR]: {e}")
