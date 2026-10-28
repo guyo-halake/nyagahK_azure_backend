@@ -14,25 +14,7 @@
     "phoneSecondary": "",
     "avatarUrl": null,
     "hasAllPermissions": true,
-    "passwordHash": "$2b$12$x0OhpiDG6aNUXlJvF1v4P.Sof5ZIvC2QmoE2XWVSSkDhkcrnta9yW",
-    "firmId": "a0000000-0000-0000-0000-000000000001"
-  },
-  {
-    "id": "b0000000-0000-0000-0000-000000000001",
-    "fullName": "Karani Victor",
-    "username": "vickarani",
-    "advocateTitle": "Karani Victor",
-    "lskNo": "P.105/9920",
-    "role": "Admin",
-    "position": "Senior Partner & Remuneration Lead",
-    "department": "",
-    "workEmail": "vickarani@gmail.com",
-    "personalEmail": "vickarani@gmail.com",
-    "phonePrimary": "",
-    "phoneSecondary": "",
-    "avatarUrl": null,
-    "hasAllPermissions": true,
-    "passwordHash": "$2b$12$g1p.SkwRqeAHH5b/tuHDzeQMWIy6Alb3Lgm5IaeCDM8Sid8APMhEi",
+    "passwordHash": "$2b$12$In.7rCzyS4eVXYcjITptZetR5hyoqtiNwRqY7Bt3YMd3TtIDpjvLS",
     "firmId": "a0000000-0000-0000-0000-000000000001"
   },
   {
@@ -50,7 +32,7 @@
     "phoneSecondary": "",
     "avatarUrl": null,
     "hasAllPermissions": false,
-    "passwordHash": "$2b$12$alb.yR42bmOdXcgysD0uu.LaEHNQOUgoZ7foM52mJ2UAXB3rHA7D6",
+    "passwordHash": "$2b$12$Ii6kMPrr2mDZ0BH/fovmKuv2EIDwDRXdEggy0jZ0WeTyDYf3rbTY.",
     "firmId": "a0000000-0000-0000-0000-000000000001"
   },
   {
@@ -68,7 +50,7 @@
     "phoneSecondary": "",
     "avatarUrl": null,
     "hasAllPermissions": true,
-    "passwordHash": "$2b$12$rhJypFKZm2DLrcrIyX.8QOxkZ5/HfEdGp330LFIAWPBafr8uxu1XW",
+    "passwordHash": "$2b$12$Rwb/rOmCQO7M96.lKbg6a.KlBqwrrP.BxQoKvyBvUK4CBy0v96GOS",
     "firmId": "a0000000-0000-0000-0000-000000000001"
   }
 ]
