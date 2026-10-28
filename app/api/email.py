@@ -26,12 +26,14 @@ try:
         render_developer_escalation_email,
         render_advocate_reset_link_email,
         render_password_reset_confirmation_email,
+        render_hearing_reminder_email,
     )
 except ModuleNotFoundError:
     from backend.app.templates.email_templates import (
         render_developer_escalation_email,
         render_advocate_reset_link_email,
         render_password_reset_confirmation_email,
+        render_hearing_reminder_email,
     )
 
 router = APIRouter(prefix="/api/v1/email", tags=["email"])
@@ -54,6 +56,7 @@ class EmailRequest(BaseModel):
     html_body: str | None = None
     category: str = Field(pattern="^(firm_to_client|lawyer_to_client|internal|developer_admin)$")
     reply_to: str | None = None
+    sender_name: str | None = None
     attachments: list[EmailAttachment] | None = None
 
 
@@ -64,14 +67,14 @@ class PasswordResetSupportRequest(BaseModel):
     user_id: str | None = None
     role: str | None = "Advocate"
     firm_name: str | None = "Nyagah B. Kithinji & Co. Advocates"
-    portal_url: str | None = "https://kithinjiandco.vercel.app"
+    portal_url: str | None = "https://nyagahkithinji-advocates.azurewebsites.net"
 
 
 class ConfirmPasswordResetRequest(BaseModel):
     email: str = Field(min_length=2)
     new_password: str = Field(min_length=6)
     token: str | None = None
-    portal_url: str | None = "https://kithinjiandco.vercel.app"
+    portal_url: str | None = "https://nyagahkithinji-advocates.azurewebsites.net"
 
 
 async def authenticated_user(access_token: str | None) -> dict:
@@ -200,7 +203,8 @@ async def send_email(payload: EmailRequest, authorization: str | None = Header(d
 
     if email_user and email_pass:
         message = EmailMessage()
-        message["From"] = f"Nyagah B. Kithinji & Co. Advocates <{email_user}>"
+        sender_firm = payload.sender_name or os.getenv("FIRM_NAME", "Karani Law Advocates")
+        message["From"] = f"{sender_firm} <{email_user}>"
         message["To"] = ", ".join(str(address) for address in payload.to)
         message["Subject"] = payload.subject
         message["X-Karani-Law-Category"] = payload.category
@@ -217,10 +221,10 @@ async def send_email(payload: EmailRequest, authorization: str | None = Header(d
 <html>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #1e293b;">
   <div style="max-width: 600px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-    <h2 style="color: #0f172a; margin-top: 0; font-size: 18px; font-weight: 800;">Nyagah B. Kithinji &amp; Co. Advocates</h2>
+    <h2 style="color: #0f172a; margin-top: 0; font-size: 18px; font-weight: 800;">{html.escape(sender_firm)}</h2>
     <div style="line-height: 1.6; white-space: pre-wrap; font-size: 13px; color: #334155;">{html.escape(payload.body)}</div>
     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center;">
-      Official automated dispatch from Nyagah B. Kithinji &amp; Co. Advocates Portal &bull; Encrypted TLS 1.3
+      Official automated dispatch from {html.escape(sender_firm)} Portal &bull; Encrypted TLS 1.3
     </div>
   </div>
 </body>
@@ -284,28 +288,42 @@ async def request_password_reset_support(
     """
     raw_input = str(payload.email).strip().lower()
 
-    # 1. Resolve email address if username / handle was provided
-    if "@" in raw_input:
+    # 1. Resolve advocate from persisted database roster
+    from app.api.users import load_persisted_users
+    users = load_persisted_users()
+    matched_user = None
+    clean_handle = raw_input.lstrip("@")
+
+    for u in users:
+        w_email = (u.get("workEmail") or "").strip().lower()
+        p_email = (u.get("personalEmail") or "").strip().lower()
+        u_name = (u.get("username") or "").strip().lower()
+        f_name = (u.get("fullName") or "").strip().lower()
+        handle = w_email.split("@")[0] if "@" in w_email else ""
+        if raw_input in (w_email, p_email, u_name, handle, f_name) or clean_handle in (u_name, handle):
+            matched_user = u
+            break
+
+    if matched_user:
+        advocate_email = (matched_user.get("workEmail") or matched_user.get("personalEmail") or "").strip().lower()
+        username = matched_user.get("username") or advocate_email.split("@")[0]
+        user_id = matched_user.get("id") or payload.user_id or f"usr-{abs(hash(advocate_email)) % 1000000}"
+        role = matched_user.get("role") or payload.role or "Advocate"
+    elif "@" in raw_input:
         advocate_email = raw_input
         username = payload.username or raw_input.split("@")[0]
+        user_id = payload.user_id or f"usr-{abs(hash(advocate_email)) % 1000000}"
+        role = payload.role or "Advocate"
     else:
-        username = raw_input
-        # Check known firm identities
-        if "guyo" in raw_input:
-            advocate_email = "guyohalakeofficial@gmail.com"
-        elif "karani" in raw_input or "victor" in raw_input:
-            advocate_email = "vickarani@gmail.com"
-        elif "nyagah" in raw_input or "kithinji" in raw_input or "lawyer" in raw_input:
-            advocate_email = "advocate@kithinjilegal.co.ke"
-        elif "razak" in raw_input:
-            advocate_email = "razak.admin@p3ldev.com"
-        else:
-            advocate_email = f"{raw_input}@kithinjilegal.co.ke"
-
-    user_id = payload.user_id or f"usr-{abs(hash(advocate_email)) % 1000000}"
-    role = payload.role or "Advocate"
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User account '{raw_input}' not found in the firm database."
+        )
     firm_name = payload.firm_name or "Nyagah B. Kithinji & Co. Advocates"
-    portal_url = payload.portal_url or "https://kithinjiandco.vercel.app"
+    portal_url = payload.portal_url or "https://nyagahkithinji-advocates.azurewebsites.net"
+    # Ensure all reset emails point directly to the production web application, never localhost
+    if not portal_url or "localhost" in portal_url or "127.0.0.1" in portal_url:
+        portal_url = "https://nyagahkithinji-advocates.azurewebsites.net"
 
     # Generate secure reset token
     reset_token = secrets.token_urlsafe(32)
@@ -364,7 +382,7 @@ async def confirm_password_reset(
     """
     advocate_email = str(payload.email).strip().lower()
     new_password = payload.new_password.strip()
-    portal_url = payload.portal_url or "https://kithinjiandco.vercel.app"
+    portal_url = payload.portal_url or "https://nyagahkithinji-advocates.azurewebsites.net"
 
     # Token validation (if token provided)
     if payload.token:
@@ -886,4 +904,58 @@ async def update_smtp_config(payload: SmtpConfigPayload):
         "message": f"SMTP Gateway credentials saved to system .env for {clean_user}!" + (
             " Server accepted connection." if auth_passed else " (Note: Run DisplayUnlockCaptcha if Google requires web verification)"
         )
+    }
+
+
+class HearingReminderRequest(BaseModel):
+    matter_id: str
+    matter_title: str
+    cts_case_number: str
+    court_station: str
+    hearing_date: str
+    court_action_required: str
+    lead_advocate_name: str
+    lead_advocate_email: str
+    portal_url: str | None = "https://nyagahkithinji-advocates.azurewebsites.net"
+
+
+@router.post("/hearing-reminder")
+async def send_hearing_reminder_endpoint(payload: HearingReminderRequest, background_tasks: BackgroundTasks):
+    """
+    Automated 48-Hour Judiciary Cause List Hearing Reminder
+    Dispatches priority email notification to the assigned lead advocate.
+    """
+    clean_email = (payload.lead_advocate_email or "").strip()
+    if not clean_email or "@" not in clean_email:
+        raise HTTPException(status_code=400, detail="A valid lead advocate email is required.")
+
+    html_body, plain_text = render_hearing_reminder_email(
+        matter_title=payload.matter_title,
+        cts_case_number=payload.cts_case_number,
+        court_station=payload.court_station,
+        hearing_date=payload.hearing_date,
+        court_action_required=payload.court_action_required,
+        lead_advocate_name=payload.lead_advocate_name,
+        portal_url=payload.portal_url or "https://nyagahkithinji-advocates.azurewebsites.net"
+    )
+
+    subject = f"[COURT DIARY ALERT] 48h Hearing Reminder: {payload.cts_case_number} — {payload.court_station}"
+
+    background_tasks.add_task(
+        send_smtp_email,
+        to_address=clean_email,
+        subject=subject,
+        plain_text=plain_text,
+        html_content=html_body,
+        category="internal",
+        reply_to="litigation@kithinjilegal.co.ke"
+    )
+
+    return {
+        "success": True,
+        "message": f"48-hour hearing reminder successfully queued for lead counsel {payload.lead_advocate_name} ({clean_email}).",
+        "case_number": payload.cts_case_number,
+        "court_station": payload.court_station,
+        "hearing_date": payload.hearing_date,
+        "recipient": clean_email
     }
