@@ -40,7 +40,7 @@ default_origins = [
     "http://localhost:80",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:8080",
-    "https://kithinjiandco.vercel.app",
+    "https://nyagahkithinji-advocates.azurewebsites.net",
     "https://karanitest.vercel.app",
     "https://*.azurewebsites.net",
     "https://*.azurecontainerapps.io"
